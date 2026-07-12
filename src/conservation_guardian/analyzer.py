@@ -90,28 +90,20 @@ class WorkflowDAG:
     def dead_branches(self) -> list[list[str]]:
         """Return paths that can never execute.
 
-        Simplified heuristic: branches from if-else nodes that lead only to
-        leaf (sink) nodes with no further processing.
+        A node is unreachable if it cannot be reached by walking forward from
+        the workflow's entry node. Each unreachable node is returned as a
+        single-node path for reporting.
         """
-        dead: list[list[str]] = []
-        for node in self.nodes.values():
-            if node.type not in ("if-else", "switch", "conditional"):
-                continue
-            for child_id in node.downstream:
-                path = self._walk_to_end(child_id)
-                if not path:
-                    continue
-                if all(len(self.nodes[nid].downstream) == 0 for nid in path if nid in self.nodes):
-                    dead.append([node.id] + path)
-        return dead
+        if not self.entry_node or self.entry_node not in self.nodes:
+            return []
 
-    def _walk_to_end(self, start_id: str) -> list[str]:
-        visited: list[str] = []
-        current = start_id
-        while current and current not in visited:
-            visited.append(current)
-            node = self.nodes.get(current)
-            if not node or not node.downstream:
-                break
-            current = node.downstream[0]
-        return visited
+        reachable: set[str] = set()
+        stack = [self.entry_node]
+        while stack:
+            current = stack.pop()
+            if current in reachable or current not in self.nodes:
+                continue
+            reachable.add(current)
+            stack.extend(self.nodes[current].downstream)
+
+        return [[nid] for nid in self.nodes if nid not in reachable]

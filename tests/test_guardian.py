@@ -107,6 +107,27 @@ class TestWorkflowDAG:
         dag = WorkflowDAG.from_dict({})
         assert len(dag.nodes) == 0
 
+    def test_dead_branches_none_reachable(self, sample_dag: WorkflowDAG):
+        # All nodes in sample_dag are reachable from the entry node
+        assert sample_dag.dead_branches() == []
+
+    def test_dead_branches_detects_unreachable_node(self):
+        raw = {
+            "graph": {
+                "nodes": [
+                    {"id": "start", "data": {"type": "start"}},
+                    {"id": "reachable", "data": {"type": "tool"}},
+                    {"id": "orphan", "data": {"type": "tool"}},
+                ],
+                "edges": [
+                    {"sourceId": "start", "targetId": "reachable"},
+                ],
+            }
+        }
+        dag = WorkflowDAG.from_dict(raw)
+        dead = dag.dead_branches()
+        assert dead == [["orphan"]]
+
 
 # ---------------------------------------------------------------------------
 # Profiler
