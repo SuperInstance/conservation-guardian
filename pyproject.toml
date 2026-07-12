@@ -23,5 +23,8 @@ classifiers = [
 [project.urls]
 Homepage = "https://github.com/SuperInstance/conservation-guardian"
 
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "mypy"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
