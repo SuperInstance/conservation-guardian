@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import statistics
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
@@ -111,13 +112,15 @@ class Profiler:
     def __init__(self, *, degradation_window: int = 5) -> None:
         self._profiles: dict[str, NodeProfile] = {}
         self.degradation_window = degradation_window
+        self._lock = threading.Lock()
 
     def record(self, sample: NodeSample) -> None:
-        profile = self._profiles.get(sample.node_id)
-        if profile is None:
-            profile = NodeProfile(node_id=sample.node_id, node_title=sample.node_title)
-            self._profiles[sample.node_id] = profile
-        profile.record(sample)
+        with self._lock:
+            profile = self._profiles.get(sample.node_id)
+            if profile is None:
+                profile = NodeProfile(node_id=sample.node_id, node_title=sample.node_title)
+                self._profiles[sample.node_id] = profile
+            profile.record(sample)
 
     def get(self, node_id: str) -> Optional[NodeProfile]:
         return self._profiles.get(node_id)

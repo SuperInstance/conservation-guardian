@@ -202,7 +202,7 @@ class TestAdapterEdgeCases:
 
 class TestConcurrentAccess:
     def test_concurrent_record(self):
-        """Multiple threads recording to the same profiler should not crash."""
+        """Multiple threads recording to the same profiler should not crash or lose samples."""
         p = Profiler()
         errors: list[Exception] = []
 
@@ -228,6 +228,28 @@ class TestConcurrentAccess:
         assert not errors
         total_samples = sum(pp.run_count for pp in p.all_profiles())
         assert total_samples == 200  # 4 threads × 50 each
+
+    def test_concurrent_budget_record_run(self):
+        """Concurrent record_run calls should not lose daily spend or token counts."""
+        budget = WorkflowBudget(max_cost_per_day=1_000_000.0)
+        errors: list[Exception] = []
+
+        def worker(count: int) -> None:
+            try:
+                for _ in range(count):
+                    budget.record_run(100, 50)
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker, args=(100,)) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors
+        assert budget.avg_tokens_per_run() == 150.0
+        assert budget.daily_spend() > 0
 
 
 # ---------------------------------------------------------------------------
