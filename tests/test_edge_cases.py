@@ -149,6 +149,17 @@ class TestAdapterEdgeCases:
         assert samples[0].node_id == "gpt-4o-mini"
         assert samples[0].cost_usd > 0
 
+    def test_openai_adapter_mini_not_shadowed_by_4o(self):
+        """gpt-4o is a substring of gpt-4o-mini; pricing must pick the longest match."""
+        adapter = OpenAIAdapter([
+            {"model": "gpt-4o-mini", "usage": {"prompt_tokens": 1000, "completion_tokens": 200}},
+        ])
+        samples = adapter.extract_samples()
+        assert len(samples) == 1
+        # gpt-4o-mini pricing: $0.00015 / 1K in, $0.0006 / 1K out
+        expected = (1000 * 0.00015 + 200 * 0.0006) / 1_000
+        assert samples[0].cost_usd == pytest.approx(expected, rel=0.01)
+
     def test_openai_adapter_no_source(self):
         with pytest.raises(AdapterError):
             OpenAIAdapter().extract_samples()
