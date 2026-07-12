@@ -477,6 +477,23 @@ class TestWasteDetector:
         findings2 = d2.detect()
         assert not any(f.category == "expensive_model" for f in findings2)
 
+    def test_expensive_model_with_three_nodes(self):
+        """Top-2 concentration should still fire when more than 2 nodes exist."""
+        p = Profiler()
+        for _ in range(10):
+            p.record(NodeSample(node_id="a", input_tokens=100, output_tokens=100,
+                                latency_ms=100.0, cost_usd=0.10))
+        for _ in range(10):
+            p.record(NodeSample(node_id="b", input_tokens=100, output_tokens=100,
+                                latency_ms=100.0, cost_usd=0.09))
+        for _ in range(10):
+            p.record(NodeSample(node_id="c", input_tokens=100, output_tokens=100,
+                                latency_ms=100.0, cost_usd=0.01))
+        # Costs: a=1.0, b=0.9, c=0.1 => total=2.0, top2=1.9 => 95%
+        d = WasteDetector(p, expensive_model_ratio=0.8)
+        findings = d.detect()
+        assert any(f.category == "expensive_model" for f in findings)
+
     def test_expensive_model_min_samples(self):
         """Bug #2: requires minimum sample count before flagging."""
         p = Profiler()

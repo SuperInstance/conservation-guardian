@@ -131,11 +131,11 @@ class WasteDetector:
         if total_samples < self.expensive_model_min_samples:
             return findings
 
-        top = self.profiler.top_by_cost(3)
+        top = self.profiler.top_by_cost(2)
         top_cost = sum(p.total_cost for p in top)
         fraction = top_cost / total_cost
 
-        if fraction > self.expensive_model_ratio and len(top) <= 2:
+        if len(top) == 2 and fraction > self.expensive_model_ratio:
             names = ", ".join(f"'{p.node_title or p.node_id}'" for p in top)
             findings.append(WasteFinding(
                 node_id=",".join(p.node_id for p in top),
