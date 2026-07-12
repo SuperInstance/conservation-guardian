@@ -322,8 +322,10 @@ class TestReporterFormats:
         assert "conservation_budget_daily_spend" in prom
 
     def test_markdown_equals_render_report(self):
+        from conservation_guardian.report import render_report
         p = Profiler()
         p.record(NodeSample(node_id="n1", input_tokens=100, output_tokens=50,
                              latency_ms=100.0, cost_usd=0.01, node_title="N1"))
         r = Reporter(profiler=p, workflow_name="Test")
-        assert r.to_markdown() == r.to_markdown()  # idempotent
+        expected = render_report(profiler=p, workflow_name="Test")
+        assert r.to_markdown() == expected
