@@ -544,6 +544,22 @@ class TestWasteDetector:
         assert d.expensive_model_min_samples == 10
         assert d.degradation_window == 3
 
+    def test_detect_latency_degradation(self):
+        p = Profiler(degradation_window=5)
+        # 10 stable samples
+        for _ in range(10):
+            p.record(NodeSample(node_id="slowing", input_tokens=100, output_tokens=100,
+                                latency_ms=100.0, cost_usd=0.01))
+        # 10 much slower samples to trigger degradation
+        for i in range(10):
+            p.record(NodeSample(node_id="slowing", input_tokens=100, output_tokens=100,
+                                latency_ms=300.0 + i * 50, cost_usd=0.01))
+        d = WasteDetector(p, degradation_window=5)
+        findings = d.detect()
+        degradation = [f for f in findings if f.category == "latency_degradation"]
+        assert len(degradation) == 1
+        assert degradation[0].node_id == "slowing"
+
 
 # ---------------------------------------------------------------------------
 # Detector unhappy-path

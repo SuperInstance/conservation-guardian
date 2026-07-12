@@ -10,7 +10,7 @@ from .profiler import NodeProfile, Profiler
 class WasteFinding:
     node_id: str
     node_title: str
-    category: str  # "overprompted", "low_utilization", "expensive_model", "redundant"
+    category: str  # "overprompted", "low_utilization", "expensive_model", "latency_degradation", "redundant"
     severity: str  # "low", "medium", "high"
     message: str
     suggestion: str
@@ -76,6 +76,7 @@ class WasteDetector:
         for p in profiles:
             findings.extend(self._check_overprompted(p))
             findings.extend(self._check_low_utilization(p, total_cost))
+            findings.extend(self._check_degradation(p))
 
         findings.extend(self._check_expensive_model_concentration(profiles, total_cost))
         return findings
@@ -118,6 +119,24 @@ class WasteDetector:
                 suggestion="Consider removing or conditionally bypassing this node.",
             )]
         return []
+
+    def _check_degradation(self, p: NodeProfile) -> list[WasteFinding]:
+        """Flag nodes whose latency is trending upward over the configured window."""
+        if not p.is_degrading(window=self.degradation_window):
+            return []
+        return [WasteFinding(
+            node_id=p.node_id,
+            node_title=p.node_title,
+            category="latency_degradation",
+            severity="medium",
+            message=(
+                f"Node '{p.node_title or p.node_id}' latency is trending upward "
+                f"over the last {self.degradation_window} runs."
+            ),
+            suggestion=(
+                "Investigate prompt bloat, larger context, or slower model swaps."
+            ),
+        )]
 
     def _check_expensive_model_concentration(
         self, profiles: list[NodeProfile], total_cost: float
