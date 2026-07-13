@@ -10,8 +10,8 @@ import threading
 import pytest
 
 from conservation_guardian.budget import WorkflowBudget
-from conservation_guardian.detector import WasteDetector, WasteFinding
-from conservation_guardian.exceptions import AdapterError, BudgetExceededError, InvalidProfileError
+from conservation_guardian.detector import WasteFinding
+from conservation_guardian.exceptions import AdapterError, BudgetExceededError
 from conservation_guardian.profiler import NodeProfile, NodeSample, Profiler
 from conservation_guardian.reporter import Reporter
 from conservation_guardian.adapters import GenericAdapter, OpenAIAdapter, LangChainAdapter
@@ -149,6 +149,17 @@ class TestAdapterEdgeCases:
         assert samples[0].node_id == "gpt-4o-mini"
         assert samples[0].cost_usd > 0
 
+    def test_openai_adapter_mini_not_shadowed_by_4o(self):
+        """gpt-4o is a substring of gpt-4o-mini; pricing must pick the longest match."""
+        adapter = OpenAIAdapter([
+            {"model": "gpt-4o-mini", "usage": {"prompt_tokens": 1000, "completion_tokens": 200}},
+        ])
+        samples = adapter.extract_samples()
+        assert len(samples) == 1
+        # gpt-4o-mini pricing: $0.00015 / 1K in, $0.0006 / 1K out
+        expected = (1000 * 0.00015 + 200 * 0.0006) / 1_000
+        assert samples[0].cost_usd == pytest.approx(expected, rel=0.01)
+
     def test_openai_adapter_no_source(self):
         with pytest.raises(AdapterError):
             OpenAIAdapter().extract_samples()
@@ -191,7 +202,7 @@ class TestAdapterEdgeCases:
 
 class TestConcurrentAccess:
     def test_concurrent_record(self):
-        """Multiple threads recording to the same profiler should not crash."""
+        """Multiple threads recording to the same profiler should not crash or lose samples."""
         p = Profiler()
         errors: list[Exception] = []
 
@@ -217,6 +228,28 @@ class TestConcurrentAccess:
         assert not errors
         total_samples = sum(pp.run_count for pp in p.all_profiles())
         assert total_samples == 200  # 4 threads × 50 each
+
+    def test_concurrent_budget_record_run(self):
+        """Concurrent record_run calls should not lose daily spend or token counts."""
+        budget = WorkflowBudget(max_cost_per_day=1_000_000.0)
+        errors: list[Exception] = []
+
+        def worker(count: int) -> None:
+            try:
+                for _ in range(count):
+                    budget.record_run(100, 50)
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker, args=(100,)) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors
+        assert budget.avg_tokens_per_run() == 150.0
+        assert budget.daily_spend() > 0
 
 
 # ---------------------------------------------------------------------------
@@ -289,8 +322,10 @@ class TestReporterFormats:
         assert "conservation_budget_daily_spend" in prom
 
     def test_markdown_equals_render_report(self):
+        from conservation_guardian.report import render_report
         p = Profiler()
         p.record(NodeSample(node_id="n1", input_tokens=100, output_tokens=50,
                              latency_ms=100.0, cost_usd=0.01, node_title="N1"))
         r = Reporter(profiler=p, workflow_name="Test")
-        assert r.to_markdown() == r.to_markdown()  # idempotent
+        expected = render_report(profiler=p, workflow_name="Test")
+        assert r.to_markdown() == expected

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Iterable
 
 from ..exceptions import AdapterError
 from ..profiler import NodeSample
@@ -89,8 +89,12 @@ class OpenAIAdapter:
             raise AdapterError(f"Failed to read {self._path}: {exc}", adapter_name="openai", cause=exc) from exc
 
     def _get_pricing(self, model: str) -> tuple[float, float]:
-        """Resolve pricing for a model, falling back to defaults."""
-        for key, pricing in self.PRICING.items():
+        """Resolve pricing for a model, falling back to defaults.
+
+        Longer keys are checked first so that ``gpt-4o-mini`` matches its
+        own entry before the substring ``gpt-4o``.
+        """
+        for key, pricing in sorted(self.PRICING.items(), key=lambda kv: len(kv[0]), reverse=True):
             if key in model:
                 return pricing["input"], pricing["output"]
         # Default to gpt-4o pricing

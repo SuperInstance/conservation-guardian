@@ -107,6 +107,27 @@ class TestWorkflowDAG:
         dag = WorkflowDAG.from_dict({})
         assert len(dag.nodes) == 0
 
+    def test_dead_branches_none_reachable(self, sample_dag: WorkflowDAG):
+        # All nodes in sample_dag are reachable from the entry node
+        assert sample_dag.dead_branches() == []
+
+    def test_dead_branches_detects_unreachable_node(self):
+        raw = {
+            "graph": {
+                "nodes": [
+                    {"id": "start", "data": {"type": "start"}},
+                    {"id": "reachable", "data": {"type": "tool"}},
+                    {"id": "orphan", "data": {"type": "tool"}},
+                ],
+                "edges": [
+                    {"sourceId": "start", "targetId": "reachable"},
+                ],
+            }
+        }
+        dag = WorkflowDAG.from_dict(raw)
+        dead = dag.dead_branches()
+        assert dead == [["orphan"]]
+
 
 # ---------------------------------------------------------------------------
 # Profiler
@@ -477,6 +498,23 @@ class TestWasteDetector:
         findings2 = d2.detect()
         assert not any(f.category == "expensive_model" for f in findings2)
 
+    def test_expensive_model_with_three_nodes(self):
+        """Top-2 concentration should still fire when more than 2 nodes exist."""
+        p = Profiler()
+        for _ in range(10):
+            p.record(NodeSample(node_id="a", input_tokens=100, output_tokens=100,
+                                latency_ms=100.0, cost_usd=0.10))
+        for _ in range(10):
+            p.record(NodeSample(node_id="b", input_tokens=100, output_tokens=100,
+                                latency_ms=100.0, cost_usd=0.09))
+        for _ in range(10):
+            p.record(NodeSample(node_id="c", input_tokens=100, output_tokens=100,
+                                latency_ms=100.0, cost_usd=0.01))
+        # Costs: a=1.0, b=0.9, c=0.1 => total=2.0, top2=1.9 => 95%
+        d = WasteDetector(p, expensive_model_ratio=0.8)
+        findings = d.detect()
+        assert any(f.category == "expensive_model" for f in findings)
+
     def test_expensive_model_min_samples(self):
         """Bug #2: requires minimum sample count before flagging."""
         p = Profiler()
@@ -505,6 +543,22 @@ class TestWasteDetector:
         assert d.expensive_model_ratio == 0.9
         assert d.expensive_model_min_samples == 10
         assert d.degradation_window == 3
+
+    def test_detect_latency_degradation(self):
+        p = Profiler(degradation_window=5)
+        # 10 stable samples
+        for _ in range(10):
+            p.record(NodeSample(node_id="slowing", input_tokens=100, output_tokens=100,
+                                latency_ms=100.0, cost_usd=0.01))
+        # 10 much slower samples to trigger degradation
+        for i in range(10):
+            p.record(NodeSample(node_id="slowing", input_tokens=100, output_tokens=100,
+                                latency_ms=300.0 + i * 50, cost_usd=0.01))
+        d = WasteDetector(p, degradation_window=5)
+        findings = d.detect()
+        degradation = [f for f in findings if f.category == "latency_degradation"]
+        assert len(degradation) == 1
+        assert degradation[0].node_id == "slowing"
 
 
 # ---------------------------------------------------------------------------

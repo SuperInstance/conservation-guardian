@@ -123,7 +123,7 @@ detector = WasteDetector(
 findings = detector.detect()
 for f in findings:
     f.node_id      # "summarizer"
-    f.category     # "overprompted", "low_utilization", "expensive_model"
+    f.category     # "overprompted", "low_utilization", "expensive_model", "latency_degradation"
     f.severity     # "high", "medium", "low"
     f.message      # Human-readable description
     f.suggestion   # What to do about it
